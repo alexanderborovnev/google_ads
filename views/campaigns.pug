@@ -1,0 +1,14 @@
+p List of campaigns
+ul
+    each val in campaigns
+        li
+            a(href=`/campaign/${val.id}`) #{val.name}
+            |
+            |
+            if val.status === 'ENABLED'
+                a(href=`/stop_campaign/${val.id}`) Suspend
+            |
+            |
+            a(href=`/delete_campaign/${val.id}`) Delete
+p Total count: #{total}
+a(href='/create_campaign') Create campaign
