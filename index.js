@@ -275,6 +275,37 @@ const createAd = (group, cb) => {
 	});
 };
 
+const createLocation = (campaignId, cb) => {
+	const service = user.getService('CampaignCriterionService', version);
+	const location = {
+		campaignId,
+		criterion: {
+			'xsi:type': 'Proximity',
+			geoPoint: {
+				/*
+				It's Minsk (in micro degrees)
+				 */
+				'xsi:type': 'GeoPoint',
+				latitudeInMicroDegrees: 53900000,
+				longitudeInMicroDegrees: 27566670
+			},
+			radiusDistanceUnits: 'KILOMETERS',
+			radiusInUnits: 13
+		}
+	};
+	const operation = {
+		operator: 'ADD',
+		operand: location
+	};
+	service.mutate({operations: [operation]}, (error, result) => {
+		if (!error) {
+			return cb(null, result);
+		}
+		return cb(error, result);
+	});
+
+};
+
 const addCriterion = (adGroupId, cb) => {
 	const criterionService = user.getService('AdGroupCriterionService', version);
 	const criteria1 = {
@@ -337,22 +368,27 @@ app.get('/create_campaign', (req, res) => {
 			if (campaignError) {
 				return res.render('error', { error: campaignError });
 			}
-			createAdGroup(campaign, (adCroupError, adGroupResult) => {
-				if (adCroupError) {
-					return res.render('error', { error: adCroupError });
+			createLocation(campaign.id, (locationError) => {
+				if (locationError) {
+					return res.render('error', { error: locationError });
 				}
-				addCriterion(adGroupResult.id, (criterionError) => {
-					if (criterionError) {
-						return res.render('error', { error: criterionError });
+				createAdGroup(campaign, (adCroupError, adGroupResult) => {
+					if (adCroupError) {
+						return res.render('error', { error: adCroupError });
 					}
-					createAd(adGroupResult, (adError, adResult) => {
-						if (adError) {
-							return res.render('error', { error: adError });
+					addCriterion(adGroupResult.id, (criterionError) => {
+						if (criterionError) {
+							return res.render('error', { error: criterionError });
 						}
-						return res.render('create_campaign', { campaignResult: adResult });
+						createAd(adGroupResult, (adError, adResult) => {
+							if (adError) {
+								return res.render('error', { error: adError });
+							}
+							return res.render('create_campaign', { campaignResult: adResult });
+						});
 					});
-				});
-			})
+				})
+			});
 		})
 	});
 });
