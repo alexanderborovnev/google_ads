@@ -472,6 +472,108 @@ app.get('/delete_campaign/:id', (req, res) => {
 			});
 		}
 	})
+});
+/**
+ * https://developers.google.com/adwords/api/docs/guides/traffic-estimator-service
+ * @param campaignEstimates
+ * @returns {object}
+ */
+const getCpcAmount = (campaignEstimates) => {
+	/**
+	 * https://developers.google.com/adwords/api/docs/reference/v201809/TrafficEstimatorService.TrafficEstimatorResult
+	 */
+	const amounts = campaignEstimates[0].adGroupEstimates[0].keywordEstimates[0];
+	const minCpc = parseFloat(amounts.min.averageCpc.microAmount);
+	const maxCpc = parseFloat(amounts.max.averageCpc.microAmount);
+	const minClicks = parseFloat(amounts.min.clicksPerDay);
+	const cpc = ((minCpc + maxCpc)/(2 * 1000000));
+	const maxClicks = parseFloat(amounts.max.clicksPerDay);
+	return { cpc, clicks: Math.round((minClicks + maxClicks)/2) };
+};
 
+app.get('/get_cpc?/:plan_type*?', (req, res) => {
+	const locationCriterionService = user.getService('LocationCriterionService', version);
+	const trafficEstimatorService = user.getService('TrafficEstimatorService', version);
+	const planType = req.params.plan_type;
+	let budget = 1;
+	let rate = 2;
+	switch (planType) {
+		case 'large':
+			budget = 5;
+			rate = 1.5;
+			break;
+		case 'medium':
+			budget = 2;
+			rate = 1.75;
+	}
+	const microAmount = budget * 1000000;
+	const locationSelector = {
+		fields: [ 'Id', 'LocationName', 'CanonicalName', 'DisplayType', 'Reach' ],
+		predicates: [
+			{field: 'LocationName', operator: 'IN', values: ['New York, USA']},
+			{field: 'Locale', operator: 'EQUALS', values: ['en']},
+		],
+	};
 
+	locationCriterionService.get({ selector: locationSelector }, (error, locations) => {
+		let locationId;
+		if (error) {
+			locationId = 2840;//There is USA
+		} else {
+			locationId = locations[0].location.id;
+		}
+		const selector = {
+			/**
+			 * https://developers.google.com/adwords/api/docs/reference/v201809/TrafficEstimatorService.CampaignEstimateRequest
+			 */
+			campaignEstimateRequests: {
+				adGroupEstimateRequests: {
+					keywordEstimateRequests: {
+						keyword: {
+							text: 'RENT',
+							matchType: 'BROAD'
+						},
+						maxCpc: {
+							microAmount: 1000000
+						}
+					}
+				},
+				/**
+				 * https://developers.google.com/adwords/api/docs/reference/v201809/TrafficEstimatorService.Criterion
+				 */
+				criteria: [
+					{
+						'xsi:type': 'cm:Location',
+						id: locationId
+					},
+					/**
+					 * See http://code.google.com/apis/adwords/docs/appendix/languagecodes.html
+					 */
+					{
+						'xsi:type': 'cm:Language',
+						id: 1000
+					}
+				],
+				/**
+				 * https://developers.google.com/adwords/api/docs/reference/v201809/TrafficEstimatorService.NetworkSetting
+				 */
+				networkSetting: {
+					targetGoogleSearch: true
+				},
+				dailyBudget: {
+					microAmount
+				}
+			}
+		};
+		trafficEstimatorService.get({selector}, (error, result) => {
+			if (error) {
+				return res.render('error', { error });
+			}
+			const estimates = getCpcAmount(result.campaignEstimates);
+			const durationDays = 7;
+			const { clicks, cpc } = estimates;
+			const planCost = Math.ceil((rate * durationDays * budget) / 5) * 5;
+			return res.render('cpc', { cpc, budget, durationDays, displayDuration: '1 Week', rate, planCost, clicks });
+		});
+	});
 });
